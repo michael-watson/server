@@ -1,16 +1,18 @@
-using GraphQL.Http;
+﻿using GraphQL.Http;
+using GraphQL.Instrumentation;
 using GraphQL.Server.Internal;
 using GraphQL.Server.Transports.AspNetCore.Common;
 using GraphQL.Types;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
 
 namespace GraphQL.Server.Transports.AspNetCore
 {
-    public class GraphQLHttpMiddleware<TSchema>
+    public class ApolloGraphQLHttpMiddleware<TSchema>
         where TSchema : ISchema
     {
         private const string JsonContentType = "application/json";
@@ -20,7 +22,7 @@ namespace GraphQL.Server.Transports.AspNetCore
         private readonly RequestDelegate _next;
         private readonly PathString _path;
 
-        public GraphQLHttpMiddleware(ILogger<GraphQLHttpMiddleware<TSchema>> logger, RequestDelegate next, PathString path)
+        public ApolloGraphQLHttpMiddleware(ILogger<GraphQLHttpMiddleware<TSchema>> logger, RequestDelegate next, PathString path)
         {
             _logger = logger;
             _next = next;
@@ -75,14 +77,17 @@ namespace GraphQL.Server.Transports.AspNetCore
                 userContext = await userContextBuilder.BuildUserContext(context);
             }
 
-            var executer = context.RequestServices.GetRequiredService<IGraphQLExecuter<TSchema>>();
+            var executer = context.RequestServices.GetRequiredService<IGraphQLExecuter<TSchema>>() as DefaultGraphQLExecuter<TSchema>;
 
+            var start = DateTime.Now;
             var result = await executer.ExecuteAsync(
                 gqlRequest.OperationName,
                 gqlRequest.Query,
                 gqlRequest.GetInputs(),
                 userContext,
                 context.RequestAborted);
+
+            result.EnrichWithApolloTracing(start);
 
             if (result.Errors != null)
             {
